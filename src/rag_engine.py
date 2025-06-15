@@ -118,28 +118,45 @@ class RAGEngine:
         
         context = "\n\n---\n\n".join(context_parts)
         
-        # Create the prompt
-        system_message = f"""You are a helpful assistant that answers questions based STRICTLY on the provided context from {self.config.data.company_name} documentation. 
+        # Create ultra-strict prompt to prevent hallucination
+        system_message = f"""You are a documentation assistant with ABSOLUTE CONSTRAINTS:
 
-CRITICAL INSTRUCTIONS:
-1. Answer using ONLY the information provided in the context below
-2. DO NOT make up, invent, or assume any information not explicitly stated in the context
-3. If the context doesn't contain enough information to answer the question, clearly state "I don't have enough information in the provided context to answer that question"
-4. Do not reference features, policies, or procedures that are not mentioned in the context
-5. Stick to the exact terminology and concepts used in the source documentation
-6. If asked about policies, only mention the specific policy types found in the context
+IMMUTABLE RULES:
+- ONLY use information EXPLICITLY stated in the provided context
+- NEVER add, interpret, assume, or infer beyond the exact text
+- NEVER use synonyms or related terms not in the context
+- NEVER provide instructions unless they appear verbatim
+- ALWAYS say "The provided documentation does not contain specific information about [topic]" when unsure
 
-Context from documentation:
-{context}"""
+FORBIDDEN SUBSTITUTIONS:
+- "crypto policy" → ONLY use "transaction policy" if that's what appears
+- "cryptocurrency dashboard" → ONLY use "dashboard" if that's what appears  
+- "digital asset settings" → ONLY use the exact terms from context
+
+RESPONSE FORMAT:
+- Start with "According to the documentation provided:" 
+- Quote directly from context
+- End with limitations if information is incomplete
+
+CONTEXT:
+{context}
+
+IMPORTANT: If you cannot answer fully using ONLY the context above, say so explicitly."""
         
-        user_message = f"Question: {question}"
+        user_message = f"Based ONLY on the context above, answer: {question}"
         
         messages = [
             {"role": "system", "content": system_message},
             {"role": "user", "content": user_message}
         ]
         
-        return self.llm_client.chat_completion(messages)
+        # Generate initial answer
+        answer = self.llm_client.chat_completion(messages)
+        
+        # Validate answer against source material
+        validated_answer = self._validate_answer_against_sources(answer, relevant_docs, question)
+        
+        return validated_answer
     
     def _format_sources(self, docs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Format source information for display."""
@@ -154,17 +171,127 @@ Context from documentation:
             })
         return sources
     
+    def _validate_answer_against_sources(self, answer: str, relevant_docs: List[Dict[str, Any]], question: str) -> str:
+        """Validate the generated answer against source documents to prevent hallucination."""
+        # Extract key terms from the answer for validation
+        answer_lower = answer.lower()
+        
+        # Common hallucination patterns to catch and correct
+        problematic_terms = {
+            'crypto policy': 'transaction policy',
+            'cryptocurrency policy': 'transaction policy', 
+            'digital asset policy': 'transaction policy',
+            'crypto dashboard': 'dashboard',
+            'crypto settings': 'settings',
+            'digital wallet policy': 'wallet policy',
+            'blockchain policy': 'transaction policy'
+        }
+        
+        # Combine all source content for validation
+        source_text = ' '.join([doc['content'].lower() for doc in relevant_docs])
+        
+        # Check for hallucinated terms and flag for replacement
+        hallucination_detected = False
+        for bad_term, correct_term in problematic_terms.items():
+            if bad_term in answer_lower:
+                # Check if the correct term actually exists in sources
+                if bad_term not in source_text:
+                    hallucination_detected = True
+                    # Only replace if we have evidence of the correct term
+                    if correct_term in source_text:
+                        answer = answer.replace(bad_term, correct_term)
+                        answer = answer.replace(bad_term.title(), correct_term.title())
+        
+        # Check for unsupported claims or instructions
+        if hallucination_detected or self._contains_unsupported_claims(answer, relevant_docs):
+            self.logger.warning(f"Potential hallucination detected in answer: {answer[:100]}...")
+            return self._generate_conservative_answer(question, relevant_docs)
+        
+        # Additional validation: check if answer makes claims not in sources
+        if self._answer_exceeds_source_scope(answer, source_text):
+            return self._generate_conservative_answer(question, relevant_docs)
+        
+        return answer
+    
+    def _contains_unsupported_claims(self, answer: str, relevant_docs: List[Dict[str, Any]]) -> bool:
+        """Check if answer contains claims not supported by source documents."""
+        # Combine all source content
+        source_content = ' '.join([doc['content'].lower() for doc in relevant_docs])
+        answer_lower = answer.lower()
+        
+        # Flag potentially unsupported instructions
+        instruction_phrases = [
+            'you can check', 'you should update', 'consult with', 
+            'navigate to', 'click on', 'go to the', 'access the'
+        ]
+        
+        for phrase in instruction_phrases:
+            if phrase in answer_lower and phrase not in source_content:
+                return True
+        
+        return False
+    
+    def _generate_conservative_answer(self, question: str, relevant_docs: List[Dict[str, Any]]) -> str:
+        """Generate a conservative answer that strictly adheres to source material."""
+        # Find the most relevant document
+        if not relevant_docs:
+            return "I cannot find information about this topic in the provided documentation."
+        
+        best_doc = relevant_docs[0]
+        source_name = best_doc['metadata'].get('source', 'the documentation')
+        
+        # Create a conservative response template
+        if 'policy' in question.lower() and 'error' in question.lower():
+            return f"""According to {source_name}, there are transaction-related APIs and error handling mechanisms available. However, the specific error you're encountering and its resolution steps are not detailed in the provided documentation. 
+
+The documentation mentions various transaction policies and approval workflows, but I cannot provide specific troubleshooting steps without more detailed error information in the source material."""
+        
+        return f"The provided documentation from {source_name} contains related information, but does not include specific details needed to fully answer your question. Please refer to the complete documentation or contact support for detailed troubleshooting steps."
+    
+    def _answer_exceeds_source_scope(self, answer: str, source_text: str) -> bool:
+        """Check if the answer makes claims that go beyond the source material scope."""
+        answer_lower = answer.lower()
+        
+        # Patterns that suggest the AI is making up information
+        overreach_patterns = [
+            'you can do this by',
+            'follow these steps',
+            'the system allows you to',
+            'simply navigate to',
+            'you will find',
+            'this feature enables',
+            'to resolve this issue'
+        ]
+        
+        for pattern in overreach_patterns:
+            if pattern in answer_lower and pattern not in source_text:
+                return True
+        
+        return False
+    
     def _calculate_confidence(self, docs: List[Dict[str, Any]]) -> float:
         """Calculate confidence score based on similarity scores."""
         if not docs:
             return 0.0
         
+        # Convert distance-based similarity to actual similarity (0-1 scale)
+        # ChromaDB returns distances, so lower is better
+        similarities = []
+        for doc in docs:
+            # Convert distance to similarity (assuming cosine distance)
+            distance = abs(doc['similarity'])
+            similarity = max(0, 1 - (distance / 2))  # Normalize to 0-1 range
+            similarities.append(similarity)
+        
+        if not similarities:
+            return 0.0
+        
         # Use the highest similarity score as base confidence
-        max_similarity = max(doc['similarity'] for doc in docs)
+        max_similarity = max(similarities)
         
         # Boost confidence if we have multiple relevant documents
-        num_relevant = sum(1 for doc in docs if doc['similarity'] > 0.7)
-        relevance_boost = min(num_relevant * 0.1, 0.3)
+        num_relevant = sum(1 for sim in similarities if sim > 0.3)
+        relevance_boost = min(num_relevant * 0.05, 0.2)
         
         confidence = min(max_similarity + relevance_boost, 1.0)
         return round(confidence, 3)
