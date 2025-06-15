@@ -4,7 +4,7 @@ import os
 import sys
 import logging
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 # Add src directory to path
 sys.path.insert(0, str(Path(__file__).parent))
@@ -232,11 +232,64 @@ Type 'help' for commands, 'examples' for sample questions, or 'quit' to exit.
         
         print()
     
-    def process_question(self, question: str):
+    def display_interface_clarification(self, result: Dict[str, Any]):
+        """Display interface clarification prompt."""
+        answer = result['answer']
+        interfaces = result.get('interfaces_available', [])
+        
+        if self.console:
+            # Rich formatting
+            clarification_panel = Panel(
+                answer,
+                title="[bold yellow]Multiple Interfaces Available[/bold yellow]",
+                title_align="left",
+                border_style="yellow"
+            )
+            self.print_rich(clarification_panel)
+        else:
+            print("\nMultiple interfaces available:")
+            print("=" * 40)
+            print(answer)
+    
+    def get_interface_choice(self, available_interfaces: List[str]) -> Optional[str]:
+        """Get user's interface preference."""
+        if not available_interfaces:
+            return None
+        
+        self.print_rich("\n[bold]Please choose an interface:[/bold]")
+        
+        while True:
+            try:
+                choice = input("Your choice: ").strip().lower()
+                
+                if choice in available_interfaces:
+                    return choice
+                elif choice in ['quit', 'exit', 'q']:
+                    return None
+                else:
+                    self.print_rich(f"[red]Please choose from: {', '.join(available_interfaces)}[/red]")
+                    
+            except KeyboardInterrupt:
+                return None
+            except EOFError:
+                return None
+    
+    def process_question(self, question: str, interface_preference: str = None):
         """Process a user question and display the answer."""
         self.print_rich("[dim]Searching knowledge base...[/dim]")
         
-        result = self.rag_engine.query(question, include_sources=self.config.cli.show_sources)
+        result = self.rag_engine.query(question, include_sources=self.config.cli.show_sources, interface_preference=interface_preference)
+        
+        # Handle interface clarification
+        if result.get('needs_clarification'):
+            self.display_interface_clarification(result)
+            
+            # Get user preference
+            interface_choice = self.get_interface_choice(result.get('interfaces_available', []))
+            if interface_choice:
+                # Re-query with interface preference
+                self.print_rich("[dim]Searching for interface-specific instructions...[/dim]")
+                result = self.rag_engine.query(question, include_sources=self.config.cli.show_sources, interface_preference=interface_choice)
         
         # Add to history
         self.history.append({
@@ -287,6 +340,9 @@ Type 'help' for commands, 'examples' for sample questions, or 'quit' to exit.
                     self.process_question(question)
                 
             except KeyboardInterrupt:
+                self.print_rich("\n[bold blue]Goodbye! 👋[/bold blue]")
+                break
+            except EOFError:
                 self.print_rich("\n[bold blue]Goodbye! 👋[/bold blue]")
                 break
             except Exception as e:

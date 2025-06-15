@@ -88,11 +88,16 @@ class VectorStore:
             formatted_results = []
             if results['documents'] and results['documents'][0]:
                 for i in range(len(results['documents'][0])):
+                    distance = results['distances'][0][i]
+                    # Convert distance to similarity score (0-1, higher is better)
+                    # For cosine distance, closer to 0 is more similar
+                    similarity = 1 / (1 + distance) if distance >= 0 else 0
+                    
                     formatted_results.append({
                         'content': results['documents'][0][i],
                         'metadata': results['metadatas'][0][i],
-                        'distance': results['distances'][0][i],
-                        'similarity': 1 - results['distances'][0][i]  # Convert distance to similarity
+                        'distance': distance,
+                        'similarity': similarity
                     })
             
             return formatted_results
