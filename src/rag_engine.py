@@ -149,7 +149,7 @@ Context:
                 'title': metadata.get('title', metadata.get('source', 'Unknown')),
                 'source': metadata.get('source', 'Unknown'),
                 'similarity': round(doc['similarity'], 3),
-                'chunk_info': f"Chunk {metadata.get('chunk_index', 0) + 1}/{metadata.get('total_chunks', 1)}"
+                'chunk_info': f"Chunk {int(metadata.get('chunk_index', 0)) + 1}/{metadata.get('total_chunks', 1)}"
             })
         return sources
     
