@@ -119,16 +119,17 @@ class RAGEngine:
         context = "\n\n---\n\n".join(context_parts)
         
         # Create the prompt
-        system_message = f"""You are a helpful assistant that answers questions based on the provided context from {self.config.data.company_name} documentation. 
+        system_message = f"""You are a helpful assistant that answers questions based STRICTLY on the provided context from {self.config.data.company_name} documentation. 
 
-Instructions:
-1. Answer the question using only the information provided in the context
-2. Be accurate and specific
-3. If the context doesn't contain enough information to answer the question, say so
-4. Cite specific sources when possible
-5. Keep your answer concise but comprehensive
+CRITICAL INSTRUCTIONS:
+1. Answer using ONLY the information provided in the context below
+2. DO NOT make up, invent, or assume any information not explicitly stated in the context
+3. If the context doesn't contain enough information to answer the question, clearly state "I don't have enough information in the provided context to answer that question"
+4. Do not reference features, policies, or procedures that are not mentioned in the context
+5. Stick to the exact terminology and concepts used in the source documentation
+6. If asked about policies, only mention the specific policy types found in the context
 
-Context:
+Context from documentation:
 {context}"""
         
         user_message = f"Question: {question}"
