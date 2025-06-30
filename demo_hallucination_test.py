@@ -49,7 +49,7 @@ def main():
     print("❌ Issues identified:")
     print("1. The AI mentions 'crypto policy' - this term doesn't appear in the retrieved documents")
     print("2. The AI provides step-by-step instructions not found in the source material") 
-    print("3. The AI makes assumptions about GK8 dashboard sections not mentioned in context")
+    print("3. The AI makes assumptions about dashboard sections not mentioned in context")
     print()
     print("✅ The retrieved documents actually contain:")
     print("- Information about transaction policies (not 'crypto policies')")

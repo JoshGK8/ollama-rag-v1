@@ -23,7 +23,7 @@ def test_hallucination_prevention():
             "expected_issues": ["crypto dashboard", "navigation instructions"]
         },
         {
-            "question": "What is GK8's cryptocurrency policy?", 
+            "question": "What is the cryptocurrency policy?", 
             "expected_issues": ["cryptocurrency policy vs transaction policy"]
         }
     ]

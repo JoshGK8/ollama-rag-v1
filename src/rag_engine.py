@@ -355,11 +355,21 @@ The documentation mentions various transaction policies and approval workflows, 
         
         # Generic interface patterns that work for any company
         interface_patterns = {
-            'gui': ['web interface', 'dashboard', 'web ui', 'graphical', 'browser', 'click', 'button', 'menu', 'page'],
+            'gui': [
+                'web interface', 'dashboard', 'web ui', 'graphical', 'browser', 'click', 'button', 'menu', 'page',
+                'impenetrable vault', 'vault interface', 'web dashboard', 'ui', 'interface', 'navigation',
+                'login to', 'log in to', 'access the', 'go to the'
+            ],
             'cli': ['command line', 'terminal', 'cli', 'command', 'script', 'shell', 'console'],
-            'api': ['api', 'endpoint', 'rest', 'http', 'post', 'get', 'json', 'curl'],
-            'mobile': ['mobile app', 'smartphone', 'android', 'ios', 'app'],
-            'desktop': ['desktop app', 'application', 'software', 'program']
+            'api': ['api', 'endpoint', 'rest', 'http', 'post', 'get', 'json', 'curl', '/api/', 'request', 'response'],
+            'mobile': [
+                'mobile app', 'smartphone', 'android', 'ios', 'app', 'mobile device', 'phone',
+                'mobile application', 'install the app', 'app store', 'google play'
+            ],
+            'desktop': [
+                'desktop app', 'application', 'software', 'program', 'install', 'executable',
+                'desktop application', 'client software', 'local application'
+            ]
         }
         
         # Combine all document content
@@ -375,7 +385,7 @@ The documentation mentions various transaction policies and approval workflows, 
     def _generate_interface_clarification(self, question: str, interfaces: List[str]) -> str:
         """Generate a clarification question about which interface to use."""
         interface_descriptions = {
-            'gui': 'web dashboard/graphical interface',
+            'gui': 'web dashboard/Impenetrable Vault interface',
             'cli': 'command line interface',
             'api': 'REST API/programmatic interface',
             'mobile': 'mobile application',
@@ -402,11 +412,21 @@ Which interface would you prefer to use? Please specify one of: {', '.join(inter
     def _filter_docs_by_interface(self, docs: List[Dict[str, Any]], interface_preference: str) -> List[Dict[str, Any]]:
         """Filter documents to focus on the preferred interface."""
         interface_patterns = {
-            'gui': ['web interface', 'dashboard', 'web ui', 'graphical', 'browser', 'click', 'button', 'menu', 'page'],
+            'gui': [
+                'web interface', 'dashboard', 'web ui', 'graphical', 'browser', 'click', 'button', 'menu', 'page',
+                'impenetrable vault', 'vault interface', 'web dashboard', 'ui', 'interface', 'navigation',
+                'login to', 'log in to', 'access the', 'go to the'
+            ],
             'cli': ['command line', 'terminal', 'cli', 'command', 'script', 'shell', 'console'],
-            'api': ['api', 'endpoint', 'rest', 'http', 'post', 'get', 'json', 'curl'],
-            'mobile': ['mobile app', 'smartphone', 'android', 'ios', 'app'],
-            'desktop': ['desktop app', 'application', 'software', 'program']
+            'api': ['api', 'endpoint', 'rest', 'http', 'post', 'get', 'json', 'curl', '/api/', 'request', 'response'],
+            'mobile': [
+                'mobile app', 'smartphone', 'android', 'ios', 'app', 'mobile device', 'phone',
+                'mobile application', 'install the app', 'app store', 'google play'
+            ],
+            'desktop': [
+                'desktop app', 'application', 'software', 'program', 'install', 'executable',
+                'desktop application', 'client software', 'local application'
+            ]
         }
         
         preference_patterns = interface_patterns.get(interface_preference.lower(), [])
@@ -415,19 +435,38 @@ Which interface would you prefer to use? Please specify one of: {', '.join(inter
         
         # Score documents based on interface preference
         scored_docs = []
+        excluded_patterns = set()
+        
+        # Get patterns for other interfaces to exclude
+        for other_interface, other_patterns in interface_patterns.items():
+            if other_interface != interface_preference.lower():
+                excluded_patterns.update(other_patterns)
+        
         for doc in docs:
             content_lower = doc['content'].lower()
+            
+            # Count matches for preferred interface
             interface_score = sum(1 for pattern in preference_patterns if pattern in content_lower)
             
-            # Boost score for this document if it mentions the preferred interface
-            if interface_score > 0:
+            # Count matches for other interfaces (to exclude)
+            exclusion_score = sum(1 for pattern in excluded_patterns if pattern in content_lower)
+            
+            # Only include documents that:
+            # 1. Have some mention of the preferred interface, OR
+            # 2. Don't strongly mention other interfaces
+            if interface_score > 0 or exclusion_score <= 1:
                 doc_copy = doc.copy()
-                doc_copy['interface_relevance'] = interface_score
+                # Prefer docs with interface mentions, but don't exclude generic docs
+                doc_copy['interface_relevance'] = interface_score - (exclusion_score * 0.5)
                 scored_docs.append(doc_copy)
         
         # If we found interface-specific docs, prioritize them; otherwise return all
         if scored_docs:
             scored_docs.sort(key=lambda x: x.get('interface_relevance', 0), reverse=True)
+            # Only return the most relevant ones if we have strong interface matches
+            strong_matches = [doc for doc in scored_docs if doc.get('interface_relevance', 0) > 0]
+            if strong_matches:
+                return strong_matches[:len(docs)//2 + 1]  # Return top half plus one
             return scored_docs
         
         return docs

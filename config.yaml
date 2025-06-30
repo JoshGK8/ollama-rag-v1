@@ -4,7 +4,7 @@
 # Data source configuration
 data:
   # Path to your documentation directory (relative to project root)
-  source_dir: "../GK8_RAG/rag_output"
+  source_dir: "./docs"
   # Supported file extensions
   file_extensions: [".md", ".txt"]
   # Company/project name (used for display purposes)

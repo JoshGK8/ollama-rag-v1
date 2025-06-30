@@ -18,7 +18,7 @@ def test_interface_detection():
         "How to configure transaction policies?", 
         "How can I access the system?",
         "Steps to setup authentication?",
-        "What is the architecture of GK8?"  # Non-how-to question
+        "What is the system architecture?"  # Non-how-to question
     ]
     
     print("=" * 80)
